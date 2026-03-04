@@ -44,13 +44,14 @@ function grade(s){
 }
 function ft(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
 function cw(w){return w.replace(/[^a-z]/g,"");}
+function escapeHtml(text){return text.replace(/[&<>"']/g,function(m){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];});}
 
 function stopAll(){
   try{recognition&&recognition.stop();}catch(e){}
   clearInterval(timerInterval);
   cancelAnimationFrame(animFrame);
   try{audioCtx&&audioCtx.state!=="closed"&&audioCtx.close();}catch(e){}
-  try{stream&&stream.getTracks().forEach(t=>t.stop());}catch(e){}
+  try{stream&&stream.getTracks().forEach(function(t){return t.stop();});}catch(e){}
 }
 
 function analyze(){
@@ -62,7 +63,7 @@ function analyze(){
   // Accuracy
   const copy=[...sw];
   let correct=0;
-  pw.forEach(w=>{const i=copy.indexOf(w);if(i!==-1){correct++;copy.splice(i,1);}});
+  pw.forEach(function(w){var i=copy.indexOf(w);if(i!==-1){correct++;copy.splice(i,1);}});
   const accuracy=sw.length===0?0:Math.min(100,Math.round((correct/total)*100));
 
   // Fluency
@@ -79,9 +80,9 @@ function analyze(){
 
   // Pronunciation
   let goodP=0;
-  pw.forEach(p=>{
+  pw.forEach(function(p){
     let best=0;
-    sw.forEach(s=>{
+    sw.forEach(function(s){
       if(!p||!s)return;
       const lo=p.length>s.length?p:s,sh=p.length>s.length?s:p;
       let m=0;for(let i=0;i<sh.length;i++)if(lo.includes(sh[i]))m++;
@@ -92,9 +93,9 @@ function analyze(){
   const pronunciation=sw.length===0?0:Math.min(100,Math.round((goodP/total)*100));
   const overall=Math.round(accuracy*0.4+fluency*0.35+pronunciation*0.25);
 
-  results={accuracy,fluency,pronunciation,overall,wpm,correct,total,
+  results={accuracy:accuracy,fluency:fluency,pronunciation:pronunciation,overall:overall,wpm:wpm,correct:correct,total:total,
     aFB:accuracy>=80?"You read most words correctly and accurately.":accuracy>=60?"You read some words correctly but missed a few.":"Several words were missed. Try reading more carefully word by word.",
-    fFB:sw.length===0?"No speech detected. Please try again.":fluency>=80?`Your pace of ${wpm} WPM is smooth and well-paced for Grade 10.`:fluency>=60?`Your pace of ${wpm} WPM is acceptable but could be smoother.`:`Your pace of ${wpm} WPM needs work. Aim for 120-160 WPM.`,
+    fFB:sw.length===0?"No speech detected. Please try again.":fluency>=80?"Your pace of "+wpm+" WPM is smooth and well-paced for Grade 10.":fluency>=60?"Your pace of "+wpm+" WPM is acceptable but could be smoother.":"Your pace of "+wpm+" WPM needs work. Aim for 120-160 WPM.",
     pFB:pronunciation>=80?"Most words were pronounced clearly and correctly.":pronunciation>=60?"Some words were clear but a few need improvement.":"Practice pronouncing words slowly and clearly.",
     oFB:overall>=80?"Excellent work! You showed strong reading skills. Keep it up!":overall>=60?"Good effort! Keep practicing daily to improve your reading.":"You are developing your reading skills. Practice reading this passage every day.",
     strengths:accuracy>=70&&fluency>=70?["Good word accuracy","Consistent reading pace"]:accuracy>=70?["Good word accuracy","Showed effort"]:fluency>=70?["Good reading pace","Showed effort"]:["Completed the reading assessment","Showed effort"],
@@ -116,10 +117,10 @@ async function startRec(){
     function upd(){
       const d=new Uint8Array(analyserNode.frequencyBinCount);
       analyserNode.getByteFrequencyData(d);
-      audioLevel=Math.min(100,d.reduce((a,b)=>a+b,0)/d.length*2);
+      audioLevel=Math.min(100,d.reduce(function(a,b){return a+b;},0)/d.length*2);
       const bars=document.getElementById("bars");
       if(bars){
-        [...bars.children].forEach((b,i)=>{
+        Array.from(bars.children).forEach(function(b,i){
           b.style.height=Math.max(5,audioLevel*(0.3+Math.abs(Math.sin(i*0.9))*0.7))+"px";
           b.style.opacity=audioLevel>3?"1":"0.2";
         });
@@ -134,7 +135,7 @@ async function startRec(){
     recognition.continuous=true;
     recognition.interimResults=true;
     recognition.lang="en-US";
-    recognition.onresult=e=>{
+    recognition.onresult=function(e){
       let interim="";
       for(let i=e.resultIndex;i<e.results.length;i++){
         if(e.results[i].isFinal) allTranscript+=e.results[i][0].transcript+" ";
@@ -144,10 +145,10 @@ async function startRec(){
       const el=document.getElementById("liveText");
       if(el) el.textContent=liveTranscript||"Listening for your voice...";
     };
-    recognition.onerror=e=>{console.log("SR error:",e.error);};
-    recognition.onend=()=>{if(step==="recording"){try{recognition.start();}catch(e){}}};
+    recognition.onerror=function(e){console.log("SR error:",e.error);};
+    recognition.onend=function(){if(step==="recording"){try{recognition.start();}catch(e){}}};
     recognition.start();
-    timerInterval=setInterval(()=>{
+    timerInterval=setInterval(function(){
       recTime++;
       const el=document.getElementById("recTime");
       if(el) el.textContent="RECORDING — "+ft(recTime);
@@ -167,7 +168,7 @@ function stopRec(){
   stopAll();
   audioLevel=0; step="analyzing"; recTime=t;
   render();
-  setTimeout(()=>analyze(),1200);
+  setTimeout(function(){analyze();},1200);
 }
 
 function reset(){
@@ -179,21 +180,21 @@ function reset(){
 
 function ring(score,label){
   const color=sc(score),r=38,circ=2*Math.PI*r,offset=circ-(score/100)*circ;
-  return`<div style="display:flex;flex-direction:column;align-items:center;gap:8px">
-    <svg width="100" height="100" viewBox="0 0 100 100">
-      <circle cx="50" cy="50" r="${r}" fill="none" stroke="#1e2d45" stroke-width="8"/>
-      <circle cx="50" cy="50" r="${r}" fill="none" stroke="${color}" stroke-width="8"
-        stroke-dasharray="${circ}" stroke-dashoffset="${offset}" stroke-linecap="round"
-        transform="rotate(-90 50 50)" style="transition:stroke-dashoffset 1.5s"/>
-      <text x="50" y="50" text-anchor="middle" dominant-baseline="central"
-        fill="${color}" font-size="18" font-weight="700" font-family="Courier New,monospace">${score}</text>
-    </svg>
-    <span style="color:#64748b;font-size:11px;letter-spacing:.1em;text-transform:uppercase">${label}</span>
-  </div>`;
+  return'<div style="display:flex;flex-direction:column;align-items:center;gap:8px">'+
+    '<svg width="100" height="100" viewBox="0 0 100 100">'+
+      '<circle cx="50" cy="50" r="'+r+'" fill="none" stroke="#1e2d45" stroke-width="8"/>'+
+      '<circle cx="50" cy="50" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="8"'+
+        'stroke-dasharray="'+circ+'" stroke-dashoffset="'+offset+'" stroke-linecap="round"'+
+        'transform="rotate(-90 50 50)" style="transition:stroke-dashoffset 1.5s"/>'+
+      '<text x="50" y="50" text-anchor="middle" dominant-baseline="central"'+
+        'fill="'+color+'" font-size="18" font-weight="700" font-family="Courier New,monospace">'+score+'</text>'+
+    '</svg>'+
+    '<span style="color:#64748b;font-size:11px;letter-spacing:.1em;text-transform:uppercase">'+label+'</span>'+
+  '</div>';
 }
 
 function bdg(text,color){
-  return`<span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">${text}</span>`;
+  return'<span style="background:'+color+'22;color:'+color+';border:1px solid '+color+'44;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">'+escapeHtml(text)+'</span>';
 }
 
 function render(){
@@ -202,157 +203,164 @@ function render(){
   // Header
   const steps=["select","ready","recording","analyzing","results"];
   const si=steps.indexOf(step);
-  html+=`<div style="background:#111827;border-bottom:1px solid #1e2d45;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10">
-    <div style="display:flex;align-items:center;gap:10px">
-      <div style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:15px">📖</div>
-      <div>
-        <div style="font-size:15px;font-weight:700;color:#fff">CBARAT</div>
-        <div style="font-size:9px;color:#64748b;letter-spacing:.08em">AUTOMATED READING ASSESSMENT TOOL</div>
-      </div>
-    </div>
-    <div style="display:flex;gap:5px">${steps.map((_,i)=>`<div style="width:7px;height:7px;border-radius:50%;background:${si>=i?"#3b82f6":"#1e2d45"}"></div>`).join("")}</div>
-  </div>`;
+  html+='<div style="background:#111827;border-bottom:1px solid #1e2d45;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10">'+
+    '<div style="display:flex;align-items:center;gap:10px">'+
+      '<div style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:15px">📖</div>'+
+      '<div>'+
+        '<div style="font-size:15px;font-weight:700;color:#fff">CBARAT</div>'+
+        '<div style="font-size:9px;color:#64748b;letter-spacing:.08em">AUTOMATED READING ASSESSMENT TOOL</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:5px">'+steps.map(function(_,i){return'<div style="width:7px;height:7px;border-radius:50%;background:'+(si>=i?"#3b82f6":"#1e2d45")+'"></div>';}).join("")+'</div>'+
+  '</div>';
 
-  html+=`<div style="max-width:800px;margin:0 auto;padding:22px 14px">`;
+  html+='<div style="max-width:800px;margin:0 auto;padding:22px 14px">';
 
   if(step==="select"){
-    html+=`
-      <div style="text-align:center;margin-bottom:28px">
-        <h1 style="font-size:26px;font-weight:700;color:#fff;margin-bottom:8px">Reading Assessment</h1>
-        <p style="color:#64748b;font-size:13px">Enter your name and select a passage to begin.</p>
-      </div>
-      <div style="margin-bottom:18px">
-        <label style="display:block;color:#64748b;font-size:11px;letter-spacing:.08em;margin-bottom:7px">STUDENT NAME</label>
-        <input id="ni" value="${studentName}" placeholder="Enter your full name..."
-          style="width:100%;background:#1a2235;border:1px solid #1e2d45;border-radius:10px;padding:12px 14px;color:#e2e8f0;font-size:15px"
-          oninput="studentName=this.value"/>
-      </div>
-      <div style="color:#64748b;font-size:11px;letter-spacing:.08em;margin-bottom:10px">SELECT A PASSAGE</div>
-      ${PASSAGES.map(p=>`
-        <div onclick="passage=PASSAGES.find(x=>x.id==${p.id});render()" style="background:${passage?.id===p.id?`linear-gradient(135deg,#3b82f618,#1a2235)`:"#1a2235"};border:1px solid ${passage?.id===p.id?"#3b82f6":"#1e2d45"};border-radius:12px;padding:14px;cursor:pointer;margin-bottom:10px;box-shadow:${passage?.id===p.id?"0 0 20px #3b82f622":"none"}">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-            <span style="font-weight:700;color:#fff;font-size:14px">${p.title}</span>
-            <div style="display:flex;gap:5px">${bdg(p.level,p.color)}${bdg(p.text.split(" ").length+" words","#64748b")}</div>
-          </div>
-          <p style="color:#64748b;font-size:12px;line-height:1.6;margin:0">${p.text.substring(0,90)}...</p>
-        </div>`).join("")}
-      <button class="btn-primary" style="margin-top:10px;opacity:${passage&&studentName.trim()?1:0.5}"
-        onclick="if(passage&&studentName.trim())step='ready',render()">Continue →</button>`;
+    html+=
+      '<div style="text-align:center;margin-bottom:28px">'+
+        '<h1 style="font-size:26px;font-weight:700;color:#fff;margin-bottom:8px">Reading Assessment</h1>'+
+        '<p style="color:#64748b;font-size:13px">Enter your name and select a passage to begin.</p>'+
+      '</div>'+
+      '<div style="margin-bottom:18px">'+
+        '<label style="display:block;color:#64748b;font-size:11px;letter-spacing:.08em;margin-bottom:7px">STUDENT NAME</label>'+
+        '<input id="ni" value="'+escapeHtml(studentName)+'" placeholder="Enter your full name..."'+
+          'style="width:100%;background:#1a2235;border:1px solid #1e2d45;border-radius:10px;padding:12px 14px;color:#e2e8f0;font-size:15px"'+
+          'oninput="studentName=this.value"/>'+
+      '</div>'+
+      '<div style="color:#64748b;font-size:11px;letter-spacing:.08em;margin-bottom:10px">SELECT A PASSAGE</div>'+
+      PASSAGES.map(function(p){
+        var isSelected=passage&&passage.id===p.id;
+        return'<div onclick="passage=PASSAGES.find(function(x){return x.id=='+p.id+';});render()" style="background:'+(isSelected?'linear-gradient(135deg,#3b82f618,#1a2235)':'#1a2235')+';border:1px solid '+(isSelected?'#3b82f6':'#1e2d45')+';border-radius:12px;padding:14px;cursor:pointer;margin-bottom:10px;box-shadow:'+(isSelected?'0 0 20px #3b82f622':'none')+'">'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">'+
+            '<span style="font-weight:700;color:#fff;font-size:14px">'+escapeHtml(p.title)+'</span>'+
+            '<div style="display:flex;gap:5px">'+bdg(p.level,p.color)+bdg(p.text.split(" ").length+" words","#64748b")+'</div>'+
+          '</div>'+
+          '<p style="color:#64748b;font-size:12px;line-height:1.6;margin:0">'+escapeHtml(p.text.substring(0,90))+'...</p>'+
+        '</div>';
+      }).join("")+
+      '<button class="btn-primary" style="margin-top:10px;opacity:'+(passage&&studentName.trim()?1:0.5)+'"'+
+        'onclick="if(passage&&studentName.trim()){step=\'ready\';render();}">Continue →</button>';
   }
 
   else if(step==="ready"){
-    html+=`
-      <div style="text-align:center;margin-bottom:22px">
-        <h2 style="font-size:22px;font-weight:700;color:#fff;margin-bottom:6px">Read the passage aloud</h2>
-        <p style="color:#64748b;font-size:13px">Press <strong style="color:#10b981">Start Recording</strong> then read clearly.</p>
-      </div>
-      <div class="card" style="border-left:4px solid #3b82f6;margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px">
-          <h3 style="color:#fff;font-size:15px;margin:0">${passage.title}</h3>
-          ${bdg(passage.level,passage.color)}
-        </div>
-        <p style="font-size:15px;line-height:2.1;color:#e2e8f0">${passage.text}</p>
-      </div>
-      <div class="card" style="margin-bottom:16px">
-        <div style="color:#64748b;font-size:11px;letter-spacing:.08em;margin-bottom:8px">📋 TIPS</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-          ${["Read at a comfortable pace","Pronounce each word clearly","Do not skip any words","Read with expression"].map(t=>`<div style="color:#e2e8f0;font-size:12px;display:flex;gap:6px"><span style="color:#10b981">✓</span>${t}</div>`).join("")}
-        </div>
-      </div>
-      <div style="display:flex;gap:10px">
-        <button onclick="step='select';render()" style="flex:1;background:transparent;border:1px solid #1e2d45;border-radius:12px;padding:13px;color:#64748b;font-size:14px">← Back</button>
-        <button class="btn-green" style="flex:3" onclick="startRec()">🎤 Start Recording</button>
-      </div>`;
+    html+=
+      '<div style="text-align:center;margin-bottom:22px">'+
+        '<h2 style="font-size:22px;font-weight:700;color:#fff;margin-bottom:6px">Read the passage aloud</h2>'+
+        '<p style="color:#64748b;font-size:13px">Press <strong style="color:#10b981">Start Recording</strong> then read clearly.</p>'+
+      '</div>'+
+      '<div class="card" style="border-left:4px solid #3b82f6;margin-bottom:14px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px">'+
+          '<h3 style="color:#fff;font-size:15px;margin:0">'+escapeHtml(passage.title)+'</h3>'+
+          bdg(passage.level,passage.color)+
+        '</div>'+
+        '<p style="font-size:15px;line-height:2.1;color:#e2e8f0">'+escapeHtml(passage.text)+'</p>'+
+      '</div>'+
+      '<div class="card" style="margin-bottom:16px">'+
+        '<div style="color:#64748b;font-size:11px;letter-spacing:.08em;margin-bottom:8px">📋 TIPS</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'+
+          ["Read at a comfortable pace","Pronounce each word clearly","Do not skip any words","Read with expression"].map(function(t){return'<div style="color:#e2e8f0;font-size:12px;display:flex;gap:6px"><span style="color:#10b981">✓</span>'+t+'</div>';}).join("")+
+        '</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px">'+
+        '<button onclick="step=\'select\';render()" style="flex:1;background:transparent;border:1px solid #1e2d45;border-radius:12px;padding:13px;color:#64748b;font-size:14px">← Back</button>'+
+        '<button class="btn-green" style="flex:3" onclick="startRec()">🎤 Start Recording</button>'+
+      '</div>';
   }
 
   else if(step==="recording"){
-    const bars=Array.from({length:20},(_,i)=>`<div style="width:4px;border-radius:2px;background:linear-gradient(to top,#3b82f6,#60a5fa);height:5px;transition:height .1s;opacity:.2"></div>`).join("");
-    html+=`
-      <div style="text-align:center;margin-bottom:14px">
-        <div style="display:inline-flex;align-items:center;gap:9px;background:#ef444422;border:1px solid #ef444444;border-radius:30px;padding:7px 16px;margin-bottom:10px">
-          <div style="width:8px;height:8px;border-radius:50%;background:#ef4444;animation:pulse 1s infinite"></div>
-          <span id="recTime" style="color:#ef4444;font-weight:700;font-size:13px;letter-spacing:.1em">RECORDING — 00:00</span>
-        </div>
-        <div id="bars" style="display:flex;justify-content:center;align-items:center;gap:3px;height:38px">${bars}</div>
-      </div>
-      <div class="card" style="margin-bottom:10px">
-        <div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:8px">READ THIS PASSAGE ALOUD</div>
-        <p style="font-size:15px;line-height:2;color:#e2e8f0">${passage.text}</p>
-      </div>
-      <div class="card" style="margin-bottom:14px;min-height:52px">
-        <div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:5px">LIVE TRANSCRIPT</div>
-        <p id="liveText" style="font-size:13px;line-height:1.7;color:#e2e8f0;font-style:italic;color:#64748b">Listening for your voice...</p>
-      </div>
-      <button class="btn-red" onclick="stopRec()">⏹ Stop &amp; Analyze</button>`;
+    var bars=Array.from({length:20},function(_,i){return'<div style="width:4px;border-radius:2px;background:linear-gradient(to top,#3b82f6,#60a5fa);height:5px;transition:height .1s;opacity:.2"></div>';}).join("");
+    html+=
+      '<div style="text-align:center;margin-bottom:14px">'+
+        '<div style="display:inline-flex;align-items:center;gap:9px;background:#ef444422;border:1px solid #ef444444;border-radius:30px;padding:7px 16px;margin-bottom:10px">'+
+          '<div style="width:8px;height:8px;border-radius:50%;background:#ef4444;animation:pulse 1s infinite"></div>'+
+          '<span id="recTime" style="color:#ef4444;font-weight:700;font-size:13px;letter-spacing:.1em">RECORDING — 00:00</span>'+
+        '</div>'+
+        '<div id="bars" style="display:flex;justify-content:center;align-items:center;gap:3px;height:38px">'+bars+'</div>'+
+      '</div>'+
+      '<div class="card" style="margin-bottom:10px">'+
+        '<div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:8px">READ THIS PASSAGE ALOUD</div>'+
+        '<p style="font-size:15px;line-height:2;color:#e2e8f0">'+escapeHtml(passage.text)+'</p>'+
+      '</div>'+
+      '<div class="card" style="margin-bottom:14px;min-height:52px">'+
+        '<div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:5px">LIVE TRANSCRIPT</div>'+
+        '<p id="liveText" style="font-size:13px;line-height:1.7;color:#e2e8f0;font-style:italic;color:#64748b">Listening for your voice...</p>'+
+      '</div>'+
+      '<button class="btn-red" onclick="stopRec()">⏹ Stop &amp; Analyze</button>';
   }
 
   else if(step==="analyzing"){
-    html+=`
-      <div style="text-align:center;padding:70px 20px">
-        <div style="font-size:50px;margin-bottom:16px">🧠</div>
-        <h2 style="font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">Analyzing your reading...</h2>
-        <p style="color:#64748b;margin-bottom:30px;font-size:13px">Calculating accuracy, fluency, and pronunciation.</p>
-        <div style="display:flex;justify-content:center;gap:8px">
-          ${[0,1,2].map(i=>`<div style="width:11px;height:11px;border-radius:50%;background:#3b82f6;animation:bounce .8s ${i*.2}s infinite"></div>`).join("")}
-        </div>
-      </div>`;
+    html+=
+      '<div style="text-align:center;padding:70px 20px">'+
+        '<div style="font-size:50px;margin-bottom:16px">🧠</div>'+
+        '<h2 style="font-size:22px;font-weight:700;color:#fff;margin-bottom:8px">Analyzing your reading...</h2>'+
+        '<p style="color:#64748b;margin-bottom:30px;font-size:13px">Calculating accuracy, fluency, and pronunciation.</p>'+
+        '<div style="display:flex;justify-content:center;gap:8px">'+
+          [0,1,2].map(function(i){return'<div style="width:11px;height:11px;border-radius:50%;background:#3b82f6;animation:bounce .8s '+(i*0.2)+'s infinite"></div>';}).join("")+
+        '</div>'+
+      '</div>';
   }
 
   else if(step==="results"&&results){
-    const [gl,gc]=grade(results.overall);
-    html+=`
-      <div style="text-align:center;margin-bottom:22px">
-        <div style="font-size:11px;color:#64748b;letter-spacing:.1em;margin-bottom:5px">ASSESSMENT COMPLETE</div>
-        <h2 style="font-size:22px;font-weight:700;color:#fff;margin-bottom:3px">${studentName?"${studentName}'s Results":"Your Results"}</h2>
-        <p style="color:#64748b;font-size:12px">${passage.title} · ${passage.level}</p>
-      </div>
+    var g=grade(results.overall);
+    var gl=g[0],gc=g[1];
+    html+=
+      '<div style="text-align:center;margin-bottom:22px">'+
+        '<div style="font-size:11px;color:#64748b;letter-spacing:.1em;margin-bottom:5px">ASSESSMENT COMPLETE</div>'+
+        '<h2 style="font-size:22px;font-weight:700;color:#fff;margin-bottom:3px">'+(studentName?escapeHtml(studentName)+"'s Results":"Your Results")+'</h2>'+
+        '<p style="color:#64748b;font-size:12px">'+escapeHtml(passage.title)+' · '+passage.level+'</p>'+
+      '</div>'+
 
-      <div style="background:linear-gradient(135deg,#1a2235,#1a2840);border:1px solid ${sc(results.overall)}44;border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">
-        <div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:10px">OVERALL PERFORMANCE</div>
-        <div style="font-size:64px;font-weight:700;color:${sc(results.overall)};font-family:Courier New,monospace;line-height:1">${results.overall}</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:10px">out of 100</div>
-        ${bdg(gl,gc)}
-        <p style="color:#e2e8f0;font-size:13px;line-height:1.8;margin-top:10px">${results.oFB}</p>
-      </div>
+      '<div style="background:linear-gradient(135deg,#1a2235,#1a2840);border:1px solid '+sc(results.overall)+'44;border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">'+
+        '<div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:10px">OVERALL PERFORMANCE</div>'+
+        '<div style="font-size:64px;font-weight:700;color:'+sc(results.overall)+';font-family:Courier New,monospace;line-height:1">'+results.overall+'</div>'+
+        '<div style="font-size:11px;color:#64748b;margin-bottom:10px">out of 100</div>'+
+        bdg(gl,gc)+
+        '<p style="color:#e2e8f0;font-size:13px;line-height:1.8;margin-top:10px">'+escapeHtml(results.oFB)+'</p>'+
+      '</div>'+
 
-      <div class="card" style="margin-bottom:12px">
-        <div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:14px">SKILL BREAKDOWN</div>
-        <div style="display:flex;justify-content:space-around;flex-wrap:wrap;gap:12px">
-          ${ring(results.accuracy,"Accuracy")}${ring(results.fluency,"Fluency")}${ring(results.pronunciation,"Pronunciation")}
-        </div>
-      </div>
+      '<div class="card" style="margin-bottom:12px">'+
+        '<div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:14px">SKILL BREAKDOWN</div>'+
+        '<div style="display:flex;justify-content:space-around;flex-wrap:wrap;gap:12px">'+
+          ring(results.accuracy,"Accuracy")+ring(results.fluency,"Fluency")+ring(results.pronunciation,"Pronunciation")+
+        '</div>'+
+      '</div>'+
 
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
-        ${[["Words/Min",results.wpm,"WPM"],["Correct",results.correct,"/ "+results.total],["Time",ft(recTime),""]].map(([l,v,u])=>`
-          <div class="card" style="text-align:center;padding:12px">
-            <div style="font-size:17px;font-weight:700;color:#3b82f6;font-family:Courier New,monospace">${v}<span style="font-size:9px;color:#64748b;font-family:Georgia"> ${u}</span></div>
-            <div style="color:#64748b;font-size:9px;letter-spacing:.06em;margin-top:3px">${l.toUpperCase()}</div>
-          </div>`).join("")}
-      </div>
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">'+
+        [["Words/Min",results.wpm,"WPM"],["Correct",results.correct,"/ "+results.total],["Time",ft(recTime),""]].map(function(item){
+          var l=item[0],v=item[1],u=item[2];
+          return'<div class="card" style="text-align:center;padding:12px">'+
+            '<div style="font-size:17px;font-weight:700;color:#3b82f6;font-family:Courier New,monospace">'+v+'<span style="font-size:9px;color:#64748b;font-family:Georgia"> '+u+'</span></div>'+
+            '<div style="color:#64748b;font-size:9px;letter-spacing:.06em;margin-top:3px">'+l.toUpperCase()+'</div>'+
+          '</div>';
+        }).join("")+
+      '</div>'+
 
-      <div class="card" style="margin-bottom:12px">
-        <div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:10px">DETAILED FEEDBACK</div>
-        ${[["Accuracy",results.aFB,results.accuracy],["Fluency",results.fFB,results.fluency],["Pronunciation",results.pFB,results.pronunciation]].map(([l,f,s])=>`
-          <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #1e2d45">
-            <div style="min-width:36px;height:36px;border-radius:8px;background:${sc(s)}22;display:flex;align-items:center;justify-content:center;color:${sc(s)};font-weight:700;font-size:13px;font-family:Courier New,monospace">${s}</div>
-            <div><div style="color:#fff;font-weight:600;font-size:13px;margin-bottom:2px">${l}</div><div style="color:#64748b;font-size:12px;line-height:1.6">${f}</div></div>
-          </div>`).join("")}
-      </div>
+      '<div class="card" style="margin-bottom:12px">'+
+        '<div style="color:#64748b;font-size:11px;letter-spacing:.1em;margin-bottom:10px">DETAILED FEEDBACK</div>'+
+        [["Accuracy",results.aFB,results.accuracy],["Fluency",results.fFB,results.fluency],["Pronunciation",results.pFB,results.pronunciation]].map(function(item){
+          var l=item[0],f=item[1],s=item[2];
+          return'<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #1e2d45">'+
+            '<div style="min-width:36px;height:36px;border-radius:8px;background:'+sc(s)+'22;display:flex;align-items:center;justify-content:center;color:'+sc(s)+';font-weight:700;font-size:13px;font-family:Courier New,monospace">'+s+'</div>'+
+            '<div><div style="color:#fff;font-weight:600;font-size:13px;margin-bottom:2px">'+l+'</div><div style="color:#64748b;font-size:12px;line-height:1.6">'+escapeHtml(f)+'</div></div>'+
+          '</div>';
+        }).join("")+
+      '</div>'+
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-        <div class="card" style="border-color:#10b98133">
-          <div style="color:#10b981;font-size:10px;letter-spacing:.1em;margin-bottom:8px">✓ STRENGTHS</div>
-          ${results.strengths.map(s=>`<div style="color:#e2e8f0;font-size:12px;margin-bottom:5px;display:flex;gap:5px"><span style="color:#10b981">•</span>${s}</div>`).join("")}
-        </div>
-        <div class="card" style="border-color:#f59e0b33">
-          <div style="color:#f59e0b;font-size:10px;letter-spacing:.1em;margin-bottom:8px">↑ TO IMPROVE</div>
-          ${results.improve.map(s=>`<div style="color:#e2e8f0;font-size:12px;margin-bottom:5px;display:flex;gap:5px"><span style="color:#f59e0b">•</span>${s}</div>`).join("")}
-        </div>
-      </div>
-      <button class="btn-primary" onclick="reset()">🔄 Start New Assessment</button>`;
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">'+
+        '<div class="card" style="border-color:#10b98133">'+
+          '<div style="color:#10b981;font-size:10px;letter-spacing:.1em;margin-bottom:8px">✓ STRENGTHS</div>'+
+          results.strengths.map(function(s){return'<div style="color:#e2e8f0;font-size:12px;margin-bottom:5px;display:flex;gap:5px"><span style="color:#10b981">•</span>'+escapeHtml(s)+'</div>';}).join("")+
+        '</div>'+
+        '<div class="card" style="border-color:#f59e0b33">'+
+          '<div style="color:#f59e0b;font-size:10px;letter-spacing:.1em;margin-bottom:8px">↑ TO IMPROVE</div>'+
+          results.improve.map(function(s){return'<div style="color:#e2e8f0;font-size:12px;margin-bottom:5px;display:flex;gap:5px"><span style="color:#f59e0b">•</span>'+escapeHtml(s)+'</div>';}).join("")+
+        '</div>'+
+      '</div>'+
+      '<button class="btn-primary" onclick="reset()">🔄 Start New Assessment</button>';
   }
 
-  html+=`</div>`;
+  html+='</div>';
   document.getElementById("app").innerHTML=html;
 }
 

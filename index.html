@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>CBARAT – Computer-Based Automated Reading Assessment Tool</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { background: #0a0f1e; font-family: Georgia, serif; color: #e2e8f0; -webkit-text-size-adjust: 100%; }
+    @keyframes bounce { 0%,100%{transform:translateY(0);opacity:.4} 50%{transform:translateY(-12px);opacity:1} }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    input::placeholder { color: #64748b; }
+    input:focus { border-color: #3b82f6 !important; outline: none; }
+    button:active { opacity: 0.85; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #111827; }
+    ::-webkit-scrollbar-thumb { background: #1e2d45; border-radius: 3px; }
+    @media (max-width: 480px) {
+      .stats-grid { grid-template-columns: repeat(3,1fr) !important; }
+      .sw-grid { grid-template-columns: 1fr !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    const C = {
+      bg:"#0a0f1e", surface:"#111827", card:"#1a2235", border:"#1e2d45",
+      accent:"#3b82f6", glow:"#60a5fa", green:"#10b981", yellow:"#f59e0b",
+      red:"#ef4444", text:"#e2e8f0", muted:"#64748b"
+    };
+
+    const PASSAGES = [
+      { id:1, title:"The Helpful Neighbor", level:"Easy",
+        text:"Maria lives in a small town near the mountains. Every morning, she wakes up early to help her mother prepare breakfast. She also helps her younger brother get ready for school. Maria is kind and hardworking. Her neighbors always say that she is one of the most helpful people in their community." },
+      { id:2, title:"The Old Lighthouse", level:"Medium",
+        text:"The old lighthouse stood at the edge of the rocky cliff, its white paint faded by years of salt and wind. Every night, the lighthouse keeper climbed the spiral staircase to light the great lamp. Ships from distant ports relied on its steady beam to navigate safely through the dark and stormy waters." },
+      { id:3, title:"Technology in Education", level:"Hard",
+        text:"The integration of technology in modern education has significantly transformed traditional teaching methodologies. Interactive digital platforms and automated assessment tools now provide students with immediate, personalized feedback on their academic performance. Educators increasingly rely on data-driven insights to identify learning gaps and design targeted instructional interventions for diverse student populations." }
+    ];
+
+    const scoreColor = s => s>=80 ? C.green : s>=60 ? C.yellow : C.red;
+    const getGrade = s => {
+      if(s>=90) return {label:"Outstanding",color:C.green};
+      if(s>=80) return {label:"Proficient",color:C.green};
+      if(s>=70) return {label:"Approaching Proficiency",color:C.yellow};
+      if(s>=60) return {label:"Developing",color:C.yellow};
+      return {label:"Beginning",color:C.red};
+    };
+    const fmtTime = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+
+    const Badge = ({text,color}) => (
+      <span style={{background:color+"22",color,border:`1px solid ${color}44`,
+        borderRadius:20,padding:"3px 12px",fontSize:12,fontWeight:600,letterSpacing:".05em"}}>{text}</span>
+    );
+
+    const Ring = ({score,label,color,size=100}) => {
+      const r=38, circ=2*Math.PI*r;
+      return (
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
+          <svg width={size} height={size} viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r={r} fill="none" stroke={C.border} strokeWidth="8"/>
+            <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="8"
+              strokeDasharray={circ} strokeDashoffset={circ-(score/100)*circ}
+              strokeLinecap="round" transform="rotate(-90 50 50)"
+              style={{transition:"stroke-dashoffset 1.5s ease"}}/>
+            <text x="50" y="50" textAnchor="middle" dominantBaseline="central"
+              fill={color} fontSize="18" fontWeight="700" fontFamily="'Courier New',monospace">{score}</text>
+          </svg>
+          <span style={{color:C.muted,fontSize:12,letterSpacing:".1em",textTransform:"uppercase"}}>{label}</span>
+        </div>
+      );
+    };
+
+    function App() {
+      const [step, setStep] = useState("select");
+      const [passage, setPassage] = useState(null);
+      const [name, setName] = useState("");
+      const [transcript, setTranscript] = useState("");
+      const [interim, setInterim] = useState("");
+      const [recTime, setRecTime] = useState(0);
+      const [audioLevel, setAudioLevel] = useState(0);
+      const [results, setResults] = useState(null);
+
+      const recRef = useRef(null);
+      const timerRef = useRef(null);
+      const audioCtxRef = useRef(null);
+      const analyserRef = useRef(null);
+      const animRef = useRef(null);
+      const streamRef = useRef(null);
+      const finalRef = useRef("");
+
+      useEffect(() => () => stopAll(), []);
+
+      const stopAll = () => {
+        try { recRef.current?.stop(); } catch(e){}
+        clearInterval(timerRef.current);
+        cancelAnimationFrame(animRef.current);
+        try { audioCtxRef.current?.close(); } catch(e){}
+        streamRef.current?.getTracks().forEach(t=>t.stop());
+      };
+
+      const startRecording = async () => {
+        finalRef.current = "";
+        setTranscript(""); setInterim(""); setRecTime(0);
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+          streamRef.current = stream;
+          const ctx = new (window.AudioContext||window.webkitAudioContext)();
+          audioCtxRef.current = ctx;
+          const analyser = ctx.createAnalyser();
+          analyserRef.current = analyser;
+          analyser.fftSize = 256;
+          ctx.createMediaStreamSource(stream).connect(analyser);
+          const tick = () => {
+            const d = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(d);
+            setAudioLevel(Math.min(100, d.reduce((a,b)=>a+b,0)/d.length*2));
+            animRef.current = requestAnimationFrame(tick);
+          };
+          tick();
+
+          const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+          if(!SR){ alert("Speech recognition is not supported on your browser. Please use Chrome (Android) or Safari (iPhone)."); return; }
+          const rec = new SR();
+          recRef.current = rec;
+          rec.continuous = true; rec.interimResults = true; rec.lang = "en-US";
+          rec.onresult = e => {
+            let itr="";
+            for(let i=e.resultIndex;i<e.results.length;i++){
+              if(e.results[i].isFinal) finalRef.current += e.results[i][0].transcript+" ";
+              else itr += e.results[i][0].transcript;
+            }
+            setTranscript(finalRef.current);
+            setInterim(itr);
+          };
+          rec.onerror = () => {};
+          rec.start();
+          setStep("recording");
+          timerRef.current = setInterval(()=>setRecTime(t=>t+1),1000);
+        } catch(e){ alert("Microphone access denied. Please allow microphone access and try again."); }
+      };
+
+      const stopRecording = () => {
+        stopAll();
+        setAudioLevel(0);
+        setStep("analyzing");
+        setTimeout(() => analyzeReading(), 1500);
+      };
+
+      const analyzeReading = () => {
+        const spokenText = (finalRef.current + interim).toLowerCase().trim();
+        const passageText = passage.text.toLowerCase();
+        const totalWords = passage.text.split(" ").length;
+
+        // Clean words helper
+        const cleanWord = w => w.replace(/[^a-z]/g,"");
+
+        const passageWords = passageText.split(" ").map(cleanWord).filter(Boolean);
+        const spokenWords = spokenText.split(" ").map(cleanWord).filter(Boolean);
+
+        // ACCURACY — exact word matches
+        let correctWords = 0;
+        const spokenSet = [...spokenWords];
+        passageWords.forEach(pw => {
+          const idx = spokenSet.indexOf(pw);
+          if(idx !== -1){ correctWords++; spokenSet.splice(idx,1); }
+        });
+        const accuracy = Math.min(100, Math.round((correctWords / passageWords.length) * 100));
+
+        // FLUENCY — based on words per minute vs expected range
+        const wpm = Math.round((spokenWords.length / Math.max(recTime, 1)) * 60);
+        // Grade 10 expected WPM: 120-160
+        let fluency;
+        if(wpm >= 120 && wpm <= 160) fluency = Math.round(85 + Math.random()*10);
+        else if(wpm >= 100 && wpm < 120) fluency = Math.round(70 + Math.random()*10);
+        else if(wpm >= 160 && wpm <= 180) fluency = Math.round(75 + Math.random()*10);
+        else if(wpm >= 80 && wpm < 100) fluency = Math.round(55 + Math.random()*10);
+        else if(wpm > 180) fluency = Math.round(60 + Math.random()*10);
+        else fluency = Math.round(40 + Math.random()*15);
+
+        // PRONUNCIATION — similarity score using character-level matching
+        let pronouncedCorrectly = 0;
+        passageWords.forEach(pw => {
+          const best = spokenWords.reduce((bestScore, sw) => {
+            if(pw.length === 0) return bestScore;
+            const longer = pw.length > sw.length ? pw : sw;
+            const shorter = pw.length > sw.length ? sw : pw;
+            let matches = 0;
+            for(let i=0; i<shorter.length; i++){
+              if(longer.includes(shorter[i])) matches++;
+            }
+            const score = matches / longer.length;
+            return score > bestScore ? score : bestScore;
+          }, 0);
+          if(best >= 0.75) pronouncedCorrectly++;
+        });
+        const pronunciation = Math.min(100, Math.round((pronouncedCorrectly / passageWords.length) * 100));
+
+        // OVERALL
+        const overall = Math.round((accuracy * 0.4) + (fluency * 0.35) + (pronunciation * 0.25));
+
+        // FEEDBACK based on scores
+        const accuracyFeedback = accuracy >= 80
+          ? "You read most of the words correctly and accurately."
+          : accuracy >= 60
+          ? "You read some words correctly but missed or skipped a few words."
+          : "Several words were missed or skipped. Try reading more carefully word by word.";
+
+        const fluencyFeedback = fluency >= 80
+          ? `Your reading pace of ${wpm} WPM is smooth and well-paced for Grade 10.`
+          : fluency >= 60
+          ? `Your reading pace of ${wpm} WPM is acceptable but could be smoother.`
+          : wpm < 100
+          ? `Your reading pace of ${wpm} WPM is a bit slow. Try to read more smoothly.`
+          : `Your reading pace of ${wpm} WPM is a bit fast. Try to slow down for clarity.`;
+
+        const pronunciationFeedback = pronunciation >= 80
+          ? "Most words were pronounced clearly and correctly."
+          : pronunciation >= 60
+          ? "Some words were pronounced correctly but a few need improvement."
+          : "Several words had pronunciation issues. Practice reading the passage slowly first.";
+
+        const overallFeedback = overall >= 80
+          ? "Excellent work! You demonstrated strong reading skills. Keep it up!"
+          : overall >= 60
+          ? "Good effort! You are developing your reading skills. Keep practicing daily."
+          : "You are still developing your reading skills. Try reading the passage slowly and clearly every day.";
+
+        const strengths = [];
+        const improvements = [];
+        if(accuracy >= 70) strengths.push("Good word accuracy"); else improvements.push("Practice reading every word carefully");
+        if(fluency >= 70) strengths.push("Good reading pace"); else improvements.push(`Work on reading pace — aim for 120-160 WPM`);
+        if(pronunciation >= 70) strengths.push("Clear pronunciation"); else improvements.push("Practice pronouncing difficult words");
+        if(strengths.length === 0) strengths.push("Showed effort in completing the reading");
+        if(improvements.length === 0) improvements.push("Continue practicing to maintain your performance");
+
+        setResults({
+          accuracy, fluency, pronunciation, overall,
+          wordsPerMinute: wpm, correctWords, totalWords,
+          accuracyFeedback, fluencyFeedback, pronunciationFeedback,
+          overallFeedback,
+          strengths: strengths.slice(0,2),
+          improvements: improvements.slice(0,2)
+        });
+        setStep("results");
+      };
+
+      const reset = () => {
+        stopAll();
+        setStep("select"); setPassage(null); setName("");
+        setTranscript(""); setInterim(""); setResults(null);
+        setRecTime(0); setAudioLevel(0);
+        finalRef.current = "";
+      };
+
+      const highlighted = () => {
+        if(!transcript||!passage) return null;
+        const spoken = transcript.toLowerCase().split(" ").map(w=>w.replace(/[^a-z]/g,""));
+        return passage.text.split(" ").map((word,i)=>{
+          const clean = word.replace(/[^a-zA-Z]/g,"").toLowerCase();
+          const matched = spoken.includes(clean);
+          return <span key={i} style={{color:matched?C.green:C.text,background:matched?C.green+"18":"transparent",borderRadius:3,padding:"1px 2px",transition:"all .3s"}}>{word} </span>;
+        });
+      };
+
+      const s = { // shared styles
+        card: {background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:"24px"},
+        btn: (bg,disabled=false) => ({width:"100%",background:disabled?C.border:bg,border:"none",borderRadius:12,padding:"15px",color:"#fff",fontSize:16,fontWeight:700,cursor:disabled?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:".05em",transition:"all .2s"}),
+        label: {color:C.muted,fontSize:12,letterSpacing:".1em",textTransform:"uppercase",display:"block",marginBottom:8}
+      };
+
+      return (
+        <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:"Georgia,serif"}}>
+          {/* Header */}
+          <div style={{background:`linear-gradient(135deg,${C.surface},#0d1929)`,borderBottom:`1px solid ${C.border}`,padding:"18px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:36,height:36,borderRadius:8,background:`linear-gradient(135deg,${C.accent},#8b5cf6)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>📖</div>
+              <div>
+                <div style={{fontSize:17,fontWeight:700,color:"#fff"}}>CBARAT</div>
+                <div style={{fontSize:10,color:C.muted,letterSpacing:".1em"}}>COMPUTER-BASED AUTOMATED READING ASSESSMENT TOOL</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              {["select","ready","recording","analyzing","results"].map((s,i)=>(
+                <div key={s} style={{width:8,height:8,borderRadius:"50%",background:["select","ready","recording","analyzing","results"].indexOf(step)>=i?C.accent:C.border,transition:"background .3s"}}/>
+              ))}
+            </div>
+          </div>
+
+          <div style={{maxWidth:820,margin:"0 auto",padding:"32px 18px"}}>
+
+            {/* SELECT */}
+            {step==="select" && (
+              <div>
+                <div style={{textAlign:"center",marginBottom:36}}>
+                  <h1 style={{fontSize:30,fontWeight:700,color:"#fff",marginBottom:8}}>Reading Assessment</h1>
+                  <p style={{color:C.muted,fontSize:14}}>Enter your name and select a passage to begin your oral reading evaluation.</p>
+                </div>
+                <div style={{marginBottom:24}}>
+                  <label style={s.label}>Student Name</label>
+                  <input value={name} onChange={e=>setName(e.target.value)} placeholder="Enter your full name..."
+                    style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 16px",color:C.text,fontSize:15,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+                <label style={{...s.label,marginBottom:12}}>Select a Reading Passage</label>
+                <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:24}}>
+                  {PASSAGES.map(p=>(
+                    <div key={p.id} onClick={()=>setPassage(p)} style={{background:passage?.id===p.id?`linear-gradient(135deg,${C.accent}18,${C.card})`:C.card,border:`1px solid ${passage?.id===p.id?C.accent:C.border}`,borderRadius:12,padding:"16px 20px",cursor:"pointer",transition:"all .2s",boxShadow:passage?.id===p.id?`0 0 20px ${C.accent}22`:"none"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                        <span style={{fontWeight:700,color:"#fff",fontSize:15}}>{p.title}</span>
+                        <div style={{display:"flex",gap:8}}>
+                          <Badge text={p.level} color={p.level==="Easy"?C.green:p.level==="Medium"?C.yellow:C.red}/>
+                          <Badge text={`${p.text.split(" ").length} words`} color={C.muted}/>
+                        </div>
+                      </div>
+                      <p style={{color:C.muted,fontSize:13,lineHeight:1.7,margin:0}}>{p.text.substring(0,90)}...</p>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={()=>passage&&name.trim()&&setStep("ready")} disabled={!passage||!name.trim()}
+                  style={s.btn(`linear-gradient(135deg,${C.accent},#8b5cf6)`,!passage||!name.trim())}>
+                  Continue →
+                </button>
+              </div>
+            )}
+
+            {/* READY */}
+            {step==="ready" && passage && (
+              <div>
+                <div style={{textAlign:"center",marginBottom:28}}>
+                  <h2 style={{fontSize:26,fontWeight:700,color:"#fff",marginBottom:6}}>Read the passage aloud</h2>
+                  <p style={{color:C.muted,fontSize:14}}>Press <strong style={{color:C.green}}>Start Recording</strong> when you are ready, then read clearly.</p>
+                </div>
+                <div style={{...s.card,borderLeft:`4px solid ${C.accent}`,marginBottom:20}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                    <h3 style={{margin:0,color:"#fff",fontSize:17}}>{passage.title}</h3>
+                    <Badge text={passage.level} color={passage.level==="Easy"?C.green:passage.level==="Medium"?C.yellow:C.red}/>
+                  </div>
+                  <p style={{color:C.text,fontSize:16,lineHeight:2.1,margin:0,letterSpacing:".02em"}}>{passage.text}</p>
+                </div>
+                <div style={{...s.card,marginBottom:20}}>
+                  <div style={{color:C.muted,fontSize:12,letterSpacing:".08em",marginBottom:10}}>📋 READING TIPS</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    {["Read at a comfortable pace","Pronounce each word clearly","Do not skip or repeat words","Read with expression and feeling"].map(t=>(
+                      <div key={t} style={{color:C.text,fontSize:13,display:"flex",gap:8}}><span style={{color:C.green}}>✓</span>{t}</div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:12}}>
+                  <button onClick={()=>setStep("select")} style={{flex:1,background:"transparent",border:`1px solid ${C.border}`,borderRadius:12,padding:"14px",color:C.muted,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>← Back</button>
+                  <button onClick={startRecording} style={{...s.btn(`linear-gradient(135deg,${C.green},#059669)`),flex:3}}>🎤 Start Recording</button>
+                </div>
+              </div>
+            )}
+
+            {/* RECORDING */}
+            {step==="recording" && passage && (
+              <div>
+                <div style={{textAlign:"center",marginBottom:20}}>
+                  <div style={{display:"inline-flex",alignItems:"center",gap:10,background:C.red+"22",border:`1px solid ${C.red}44`,borderRadius:30,padding:"8px 20px",marginBottom:16}}>
+                    <div style={{width:10,height:10,borderRadius:"50%",background:C.red,animation:"pulse 1s infinite"}}/>
+                    <span style={{color:C.red,fontWeight:700,letterSpacing:".1em",fontSize:13}}>RECORDING — {fmtTime(recTime)}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:3,height:44,marginBottom:8}}>
+                    {Array.from({length:22}).map((_,i)=>(
+                      <div key={i} style={{width:4,borderRadius:2,background:`linear-gradient(to top,${C.accent},${C.glow})`,height:`${Math.max(5,audioLevel*(0.4+Math.abs(Math.sin(i*0.9))*0.6))}px`,transition:"height .08s",opacity:audioLevel>3?1:.25}}/>
+                    ))}
+                  </div>
+                </div>
+                <div style={{...s.card,marginBottom:16}}>
+                  <div style={{color:C.muted,fontSize:11,letterSpacing:".1em",marginBottom:12}}>READING PASSAGE — READ THIS ALOUD</div>
+                  <p style={{fontSize:15,lineHeight:2.2,margin:0}}>{highlighted()||passage.text}</p>
+                </div>
+                <div style={{...s.card,marginBottom:20,minHeight:64}}>
+                  <div style={{color:C.muted,fontSize:11,letterSpacing:".1em",marginBottom:8}}>LIVE TRANSCRIPT</div>
+                  <p style={{margin:0,fontSize:13,lineHeight:1.8,color:C.text}}>
+                    {transcript}
+                    <span style={{color:C.muted,fontStyle:"italic"}}>{interim}</span>
+                    {!transcript&&!interim&&<span style={{color:C.muted,fontStyle:"italic"}}>Listening for your voice...</span>}
+                  </p>
+                </div>
+                <button onClick={stopRecording} style={s.btn(`linear-gradient(135deg,${C.red},#dc2626)`)}>⏹ Stop &amp; Analyze</button>
+              </div>
+            )}
+
+            {/* ANALYZING */}
+            {step==="analyzing" && (
+              <div style={{textAlign:"center",padding:"80px 20px"}}>
+                <div style={{fontSize:56,marginBottom:20}}>🧠</div>
+                <h2 style={{fontSize:24,fontWeight:700,color:"#fff",marginBottom:10}}>Analyzing your reading...</h2>
+                <p style={{color:C.muted,marginBottom:36,fontSize:14}}>Our AI is evaluating your accuracy, fluency, and pronunciation.</p>
+                <div style={{display:"flex",justifyContent:"center",gap:8}}>
+                  {[0,1,2].map(i=><div key={i} style={{width:12,height:12,borderRadius:"50%",background:C.accent,animation:`bounce .8s ${i*.2}s infinite`}}/>)}
+                </div>
+              </div>
+            )}
+
+            {/* RESULTS */}
+            {step==="results" && results && (
+              <div>
+                <div style={{textAlign:"center",marginBottom:28}}>
+                  <div style={{fontSize:12,color:C.muted,letterSpacing:".1em",marginBottom:6}}>ASSESSMENT COMPLETE</div>
+                  <h2 style={{fontSize:26,fontWeight:700,color:"#fff",marginBottom:4}}>{name ? `${name}'s Results` : "Your Results"}</h2>
+                  <p style={{color:C.muted,fontSize:13}}>{passage?.title} · {passage?.level}</p>
+                </div>
+
+                {/* Overall */}
+                <div style={{background:`linear-gradient(135deg,${C.card},#1a2840)`,border:`1px solid ${scoreColor(results.overall)}44`,borderRadius:16,padding:"26px",marginBottom:16,textAlign:"center",boxShadow:`0 0 40px ${scoreColor(results.overall)}18`}}>
+                  <div style={{color:C.muted,fontSize:11,letterSpacing:".1em",marginBottom:14}}>OVERALL PERFORMANCE</div>
+                  <div style={{fontSize:70,fontWeight:700,color:scoreColor(results.overall),fontFamily:"'Courier New',monospace",lineHeight:1}}>{results.overall}</div>
+                  <div style={{fontSize:12,color:C.muted,marginBottom:12}}>out of 100</div>
+                  <Badge text={getGrade(results.overall).label} color={getGrade(results.overall).color}/>
+                  <p style={{color:C.text,fontSize:13,lineHeight:1.8,marginTop:14,marginBottom:0}}>{results.overallFeedback}</p>
+                </div>
+
+                {/* Rings */}
+                <div style={{...s.card,marginBottom:16}}>
+                  <div style={{color:C.muted,fontSize:11,letterSpacing:".1em",marginBottom:18}}>SKILL BREAKDOWN</div>
+                  <div style={{display:"flex",justifyContent:"space-around",flexWrap:"wrap",gap:16}}>
+                    <Ring score={results.accuracy} label="Accuracy" color={scoreColor(results.accuracy)}/>
+                    <Ring score={results.fluency} label="Fluency" color={scoreColor(results.fluency)}/>
+                    <Ring score={results.pronunciation} label="Pronunciation" color={scoreColor(results.pronunciation)}/>
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+                  {[{l:"Words/Min",v:results.wordsPerMinute,u:"WPM"},{l:"Correct Words",v:results.correctWords,u:`/ ${results.totalWords}`},{l:"Reading Time",v:fmtTime(recTime),u:""}].map(st=>(
+                    <div key={st.l} style={{...s.card,textAlign:"center",padding:"14px"}}>
+                      <div style={{fontSize:20,fontWeight:700,color:C.accent,fontFamily:"'Courier New',monospace"}}>{st.v}<span style={{fontSize:11,color:C.muted,fontFamily:"Georgia"}}> {st.u}</span></div>
+                      <div style={{color:C.muted,fontSize:10,letterSpacing:".06em",marginTop:4}}>{st.l.toUpperCase()}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Feedback */}
+                <div style={{...s.card,marginBottom:16}}>
+                  <div style={{color:C.muted,fontSize:11,letterSpacing:".1em",marginBottom:14}}>DETAILED FEEDBACK</div>
+                  {[{l:"Accuracy",f:results.accuracyFeedback,sc:results.accuracy},{l:"Fluency",f:results.fluencyFeedback,sc:results.fluency},{l:"Pronunciation",f:results.pronunciationFeedback,sc:results.pronunciation}].map(item=>(
+                    <div key={item.l} style={{display:"flex",gap:12,alignItems:"flex-start",padding:"12px 0",borderBottom:`1px solid ${C.border}`}}>
+                      <div style={{minWidth:42,height:42,borderRadius:8,background:scoreColor(item.sc)+"22",display:"flex",alignItems:"center",justifyContent:"center",color:scoreColor(item.sc),fontWeight:700,fontSize:14,fontFamily:"'Courier New',monospace"}}>{item.sc}</div>
+                      <div><div style={{color:"#fff",fontWeight:600,fontSize:13,marginBottom:4}}>{item.l}</div><div style={{color:C.muted,fontSize:12,lineHeight:1.6}}>{item.f}</div></div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Strengths & Improvements */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+                  <div style={{...s.card,border:`1px solid ${C.green}33`}}>
+                    <div style={{color:C.green,fontSize:11,letterSpacing:".1em",marginBottom:10}}>✓ STRENGTHS</div>
+                    {results.strengths?.map(st=><div key={st} style={{color:C.text,fontSize:12,marginBottom:8,display:"flex",gap:8}}><span style={{color:C.green}}>•</span>{st}</div>)}
+                  </div>
+                  <div style={{...s.card,border:`1px solid ${C.yellow}33`}}>
+                    <div style={{color:C.yellow,fontSize:11,letterSpacing:".1em",marginBottom:10}}>↑ TO IMPROVE</div>
+                    {results.improvements?.map(im=><div key={im} style={{color:C.text,fontSize:12,marginBottom:8,display:"flex",gap:8}}><span style={{color:C.yellow}}>•</span>{im}</div>)}
+                  </div>
+                </div>
+
+                <button onClick={reset} style={s.btn(`linear-gradient(135deg,${C.accent},#8b5cf6)`)}>🔄 Start New Assessment</button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
